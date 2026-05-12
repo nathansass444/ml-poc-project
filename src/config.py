@@ -26,7 +26,7 @@ TEST_LEAGUE = "ENG-Championship"
 TEST_CLUB   = "Leeds United"
 
 # ── Data settings ─────────────────────────────────────────────────────────────
-# Ligues secondaires européennes (objectif final du projet)
+# Ligues secondaires : vivier principal de joueurs à recruter
 TARGET_LEAGUES = [
     "ENG-Championship",
     "FRA-Ligue 2",
@@ -38,8 +38,22 @@ TARGET_LEAGUES = [
     "ESP-Segunda División",
 ]
 
+# Big 5 : joueurs peu utilisés potentiellement disponibles pour les ligues secondaires
+# Ajoutés au pipeline final avec filtre MIN_MINUTES_TOP5 pour ne garder que les remplaçants
+TOP5_LEAGUES = [
+    "ENG-Premier League",
+    "ESP-La Liga",
+    "GER-Bundesliga",
+    "FRA-Ligue 1",
+    "ITA-Serie A",
+]
+
+# Seuil de minutes pour qu'un joueur du top 5 soit considéré "disponible"
+# (titulaire = ~2500 min sur 38 matchs, on garde les joueurs peu utilisés)
+MIN_MINUTES_TOP5 = 900
+
 SEASON      = "2324"   # saison 2023-24
-MIN_MINUTES = 500      # minutes minimum pour inclure un joueur
+MIN_MINUTES = 500      # minutes minimum pour inclure un joueur (ligues secondaires)
 
 # ── Model registry ────────────────────────────────────────────────────────────
 MODELS = {
