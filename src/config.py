@@ -21,9 +21,9 @@ STREAMLIT_PORT = 8501
 # ── Incremental mode ──────────────────────────────────────────────────────────
 # Phase 1 : TEST_MODE = True  → 1 ligue, 1 club
 # Phase 2 : TEST_MODE = False → toutes les ligues
-TEST_MODE   = True
+TEST_MODE   = False
 TEST_LEAGUE = "ENG-Championship"
-TEST_CLUB   = None  # None = ligue entiere
+TEST_CLUB   = None
 
 # ── Data settings ─────────────────────────────────────────────────────────────
 # Ligues secondaires : vivier principal de joueurs à recruter
@@ -35,7 +35,7 @@ TARGET_LEAGUES = [
     "NED-Eredivisie",
     "BEL-First Division A",
     "POR-Primeira Liga",
-    "ESP-Segunda División",
+    "ESP-Segunda Division",
 ]
 
 # Big 5 : joueurs peu utilisés potentiellement disponibles pour les ligues secondaires
