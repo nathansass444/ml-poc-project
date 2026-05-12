@@ -43,9 +43,23 @@ def load_data():
     if not p.exists() or not t.exists():
         return None, None
     players = pd.read_csv(p)
-    # colonne role depuis position FBref
     pos_col = "pos" if "pos" in players.columns else "position"
     players["role"] = players[pos_col].apply(get_role_label)
+
+    # Pre-calcul des stats per-90 pour affichage dans les cartes
+    d = players["Playing Time_90s"].clip(lower=1)
+    for feat, raw in {
+        "int_per90":  "Performance_Int",
+        "tklw_per90": "Performance_TklW",
+        "fls_per90":  "Performance_Fls",
+        "fld_per90":  "Performance_Fld",
+        "crs_per90":  "Performance_Crs",
+        "off_per90":  "Performance_Off",
+        "crd_per90":  "Performance_CrdY",
+    }.items():
+        if raw in players.columns:
+            players[feat] = pd.to_numeric(players[raw], errors="coerce") / d
+
     return players, pd.read_csv(t)
 
 
@@ -183,18 +197,35 @@ def build_app() -> None:
     st.markdown("""
     <style>
         .main-title  { font-size:2.2rem; font-weight:800; color:#00d4ff; }
-        .subtitle    { color:#aaa; margin-top:-8px; margin-bottom:20px; }
+        .subtitle    { color:#ccc; margin-top:-8px; margin-bottom:20px; }
         .player-card {
             background:#1e1e2e; border-radius:10px;
-            padding:14px; margin:5px 0;
+            padding:16px 18px 10px 18px; margin:8px 0;
             border-left:4px solid #00d4ff;
         }
         .player-card.top5 { border-left-color:#ff6b35; }
+        .player-name {
+            font-size:1.15rem; font-weight:700;
+            color:#ffffff; letter-spacing:0.3px;
+        }
+        .player-meta { font-size:0.88rem; color:#cccccc; margin-top:3px; }
+        .sim-bar-wrap {
+            background:#2e2e3e; border-radius:6px;
+            height:8px; margin:8px 0 4px 0; overflow:hidden;
+        }
+        .sim-bar { height:8px; border-radius:6px; }
+        .sim-label { font-size:0.82rem; font-weight:600; }
+        .tier-badge-top5 {
+            background:#ff6b3522; color:#ff6b35;
+            border:1px solid #ff6b35; border-radius:4px;
+            font-size:0.72rem; padding:1px 6px; margin-left:8px;
+            vertical-align:middle;
+        }
         .metric-card {
             background:#1e1e2e; border-radius:10px;
             padding:14px; text-align:center;
         }
-        .metric-value { font-size:1.6rem; font-weight:700; color:#00d4ff; }
+        .metric-value { font-size:1.5rem; font-weight:700; color:#00d4ff; }
         .metric-label { font-size:0.82rem; color:#aaa; }
     </style>
     """, unsafe_allow_html=True)
@@ -307,30 +338,82 @@ def build_app() -> None:
             st.warning("Aucun remplacant trouve avec ces filtres.")
             st.stop()
 
+        # Stats a afficher selon le role
+        ROLE_STATS: dict[str, list[tuple[str, str]]] = {
+            "forward":    [
+                ("Buts/90",      "Per 90 Minutes_Gls"),
+                ("Passes D/90",  "Per 90 Minutes_Ast"),
+                ("Tirs/90",      "Standard_Sh/90"),
+                ("Cadres/90",    "Standard_SoT/90"),
+                ("Hors-jeu/90",  "off_per90"),
+            ],
+            "midfielder": [
+                ("Buts/90",       "Per 90 Minutes_Gls"),
+                ("Passes D/90",   "Per 90 Minutes_Ast"),
+                ("Tacles/90",     "tklw_per90"),
+                ("Interc./90",    "int_per90"),
+                ("Centres/90",    "crs_per90"),
+            ],
+            "defender":   [
+                ("Tacles/90",    "tklw_per90"),
+                ("Interc./90",   "int_per90"),
+                ("F. subies/90", "fld_per90"),
+                ("Buts/90",      "Per 90 Minutes_Gls"),
+                ("Passes D/90",  "Per 90 Minutes_Ast"),
+            ],
+            "goalkeeper": [
+                ("Minutes",  "Playing Time_Min"),
+                ("Matchs",   "Playing Time_MP"),
+                ("Cartons",  "crd_per90"),
+            ],
+        }
+        stats_to_show = ROLE_STATS.get(player_role, ROLE_STATS["midfielder"])
+
+        # Stats du joueur de reference
+        ref_row = players_df[players_df["player"] == selected_player].iloc[0]
+
         st.subheader(f"Top {len(replacements)} remplacants pour {selected_player}")
+        st.caption("Bordure bleue = ligue secondaire  |  Bordure orange = Top 5 (peu utilise)")
 
-        # Legende tier
-        st.caption("Bordure bleue = ligue secondaire  |  Bordure orange = top 5 (peu utilise)")
-
-        for rank, row in replacements.iterrows():
+        for i, (_, row) in enumerate(replacements.iterrows()):
             sim_pct   = int(row["similarity"] * 100)
-            sim_color = "#7bc67e" if sim_pct >= 80 else "#f7b731" if sim_pct >= 60 else "#ff6b35"
+            sim_color = "#7bc67e" if sim_pct >= 80 else "#f7b731" if sim_pct >= 60 else "#e74c3c"
             tier_cls  = "top5" if row.get("tier") == "top5" else ""
-            tier_tag  = " | <span style='color:#ff6b35'>TOP 5</span>" if tier_cls == "top5" else ""
-            age       = str(row.get("age", "?")).split("-")[0]   # "25-120" -> "25"
-            nation    = row.get("nation", "")
-            mins      = int(row["Playing Time_Min"]) if not pd.isna(row.get("Playing Time_Min", float("nan"))) else "?"
+            tier_badge = '<span class="tier-badge-top5">TOP 5</span>' if tier_cls == "top5" else ""
+            age        = str(row.get("age", "?")).split("-")[0]
+            nation     = row.get("nation", "")
+            mins       = int(row["Playing Time_Min"]) if pd.notna(row.get("Playing Time_Min")) else "?"
+            bar_width  = sim_pct
 
+            # En-tete de carte
             st.markdown(
                 f'<div class="player-card {tier_cls}">'
-                f'<b style="font-size:1.05rem">#{rank+1} {row["player"]}</b>'
-                f'{tier_tag}<br>'
-                f'<span style="color:#aaa">{row["team"]} — {row["league"]}</span><br>'
-                f'<span style="color:#aaa">{age} ans | {nation} | {mins} min</span><br>'
-                f'<b style="color:{sim_color}">Similarite : {sim_pct}%</b>'
+                f'<span class="player-name">#{i+1} &nbsp;{row["player"]}</span>{tier_badge}<br>'
+                f'<span class="player-meta">{row["team"]} &nbsp;·&nbsp; {row["league"]}</span><br>'
+                f'<span class="player-meta">{age} ans &nbsp;·&nbsp; {nation} &nbsp;·&nbsp; {mins} min</span>'
+                f'<div class="sim-bar-wrap"><div class="sim-bar" '
+                f'style="width:{bar_width}%; background:{sim_color};"></div></div>'
+                f'<span class="sim-label" style="color:{sim_color}">Similarite : {sim_pct}%</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
+
+            # Stats comparatives (candidat vs joueur remplace)
+            cand_full = players_df[players_df["player"] == row["player"]]
+            if not cand_full.empty:
+                cand_row = cand_full.iloc[0]
+                cols = st.columns(len(stats_to_show))
+                for col, (label, col_name) in zip(cols, stats_to_show):
+                    cand_val = float(cand_row.get(col_name, 0) or 0)
+                    ref_val  = float(ref_row.get(col_name, 0) or 0)
+                    delta    = round(cand_val - ref_val, 2)
+                    col.metric(
+                        label=label,
+                        value=f"{cand_val:.2f}",
+                        delta=f"{delta:+.2f} vs ref",
+                        delta_color="normal",
+                    )
+            st.markdown("")   # espace entre les cartes
 
         # Radar chart top 3
         st.markdown("### Comparaison radar — Top 3")
