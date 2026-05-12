@@ -21,9 +21,9 @@ STREAMLIT_PORT = 8501
 # ── Incremental mode ──────────────────────────────────────────────────────────
 # Phase 1 : TEST_MODE = True  → 1 ligue, 1 club
 # Phase 2 : TEST_MODE = False → toutes les ligues
-TEST_MODE  = True
-TEST_LEAGUE = "ENG-Premier League"
-TEST_CLUB   = "Arsenal"
+TEST_MODE   = True
+TEST_LEAGUE = "ENG-Championship"
+TEST_CLUB   = "Sheffield United"
 
 # ── Data settings ─────────────────────────────────────────────────────────────
 # Ligues secondaires : vivier principal de joueurs à recruter
