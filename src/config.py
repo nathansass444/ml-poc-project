@@ -18,22 +18,28 @@ APP_ENTRYPOINT = SRC_DIR / "app.py"
 STREAMLIT_HOST = "localhost"
 STREAMLIT_PORT = 8501
 
-# ── Data settings ─────────────────────────────────────────────────────────────
-# Leagues covered by soccerdata / FBref
-# Codes : ENG-Premier League, ENG-Championship, ESP-La Liga, FRA-Ligue 1,
-#         FRA-Ligue 2, GER-Bundesliga, ITA-Serie A, ITA-Serie B,
-#         NED-Eredivisie, BEL-First Division A, POR-Primeira Liga
-TARGET_LEAGUES = [
-    "ENG-Premier League",
-    "ESP-La Liga",
-    "FRA-Ligue 1",
-    "GER-Bundesliga",
-    "ITA-Serie A",
-]
-SEASON = "2324"   # soccerdata season string for 2023-24
+# ── Incremental mode ──────────────────────────────────────────────────────────
+# Phase 1 : TEST_MODE = True  → 1 ligue, 1 club
+# Phase 2 : TEST_MODE = False → toutes les ligues
+TEST_MODE  = True
+TEST_LEAGUE = "ENG-Championship"
+TEST_CLUB   = "Leeds United"
 
-# Minimum minutes played to include a player
-MIN_MINUTES = 500
+# ── Data settings ─────────────────────────────────────────────────────────────
+# Ligues secondaires européennes (objectif final du projet)
+TARGET_LEAGUES = [
+    "ENG-Championship",
+    "FRA-Ligue 2",
+    "GER-2. Bundesliga",
+    "ITA-Serie B",
+    "NED-Eredivisie",
+    "BEL-First Division A",
+    "POR-Primeira Liga",
+    "ESP-Segunda División",
+]
+
+SEASON      = "2324"   # saison 2023-24
+MIN_MINUTES = 500      # minutes minimum pour inclure un joueur
 
 # ── Model registry ────────────────────────────────────────────────────────────
 MODELS = {
