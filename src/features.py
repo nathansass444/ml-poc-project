@@ -1,8 +1,7 @@
 """
-features.py  –  Feature engineering partagé entre l'entraînement et l'inférence.
+features.py  -  Feature engineering base sur les colonnes reelles de FBref.
 
-Toutes les décisions sur QUELLES features utiliser sont centralisées ici
-pour garantir la cohérence entre train_models.py, data.py, et app.py.
+Colonnes disponibles verifiees sur players_raw.csv et teams_raw.csv.
 """
 
 from __future__ import annotations
@@ -12,204 +11,127 @@ import numpy as np
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Features équipe — définir le STYLE DE JEU
+# Features equipe  —  style de jeu (KMeans)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Ces features décrivent comment une équipe joue collectivement.
-# Noms génériques : soccerdata/FBref peut varier légèrement selon la version.
-# La fonction prepare_team_features() gère les aliases.
-
-TEAM_STYLE_FEATURES = [
-    # Possession
-    "possession",            # % possession moyenne
-    # Passes
-    "passes_completed_pct",  # précision des passes
-    "passes_short_pct",      # % passes courtes (jeu de possession vs direct)
-    "passes_progressive",    # passes progressives / 90
-    # Pressing
-    "pressures",             # nb de pressions défensives / 90
-    "press_success_pct",     # % succès des pressings
-    "ppda",                  # passes autorisées par action défensive (pressing haut = faible)
-    # Transitions
-    "shots",                 # tirs / 90 (agressivité offensive)
-    "shots_on_target_pct",   # efficacité
-    # Duels
-    "aerials_won_pct",       # % duels aériens gagnés (jeu direct = élevé)
-    # Défense
-    "tackles",               # tacles / 90
-    "interceptions",         # interceptions / 90
-    # Buts
-    "goals",                 # buts marqués / 90
-    "goals_against",         # buts encaissés / 90
+# Colonnes directement disponibles dans teams_raw.csv
+TEAM_DIRECT_FEATURES = [
+    "Poss",                   # % possession
+    "Standard_Sh/90",         # tirs / 90
+    "Standard_SoT/90",        # tirs cadres / 90
+    "Standard_SoT%",          # precision tirs
+    "Standard_G/SoT",         # conversion
+    "Per 90 Minutes_Gls",     # buts marques / 90
+    "Team Success_PPM",       # points / match
+    "Team Success_+/-90",     # difference de buts / 90
 ]
 
-# Mapping vers les noms réels que FBref peut utiliser
-TEAM_FEATURE_ALIASES: dict[str, list[str]] = {
-    "possession":            ["possession", "poss", "Poss"],
-    "passes_completed_pct":  ["passes_completed_pct", "cmp_pct", "pass_cmp_pct"],
-    "passes_short_pct":      ["passes_short_pct", "short_cmp_pct"],
-    "passes_progressive":    ["passes_progressive", "prg_pass", "progressive_passes"],
-    "pressures":             ["pressures", "press"],
-    "press_success_pct":     ["press_success_pct", "press_succ_pct"],
-    "ppda":                  ["ppda", "PPDA"],
-    "shots":                 ["shots", "sh", "Sh"],
-    "shots_on_target_pct":   ["shots_on_target_pct", "sot_pct", "SoT_pct"],
-    "aerials_won_pct":       ["aerials_won_pct", "won_pct_aerial"],
-    "tackles":               ["tackles", "tkl", "Tkl"],
-    "interceptions":         ["interceptions", "int", "Int"],
-    "goals":                 ["goals", "gls", "Gls"],
-    "goals_against":         ["goals_against", "ga", "GA"],
+# Colonnes a calculer en per-90 (raw / Playing Time_90s)
+TEAM_COMPUTED_PER90 = {
+    "fls_per90":  "Performance_Fls",   # fautes (proxy pressing agressif)
+    "int_per90":  "Performance_Int",   # interceptions (bloc defensif)
+    "tklw_per90": "Performance_TklW",  # tacles reussis
+    "crs_per90":  "Performance_Crs",   # centres (jeu direct/large)
+    "off_per90":  "Performance_Off",   # hors-jeu (ligne haute)
+    "crd_per90":  "Performance_CrdY",  # cartons jaunes (agressivite)
 }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Features joueur — définir le PROFIL TACTIQUE
-# ─────────────────────────────────────────────────────────────────────────────
-
-PLAYER_ROLE_FEATURES = [
-    # Volume offensif
-    "goals_per90",
-    "assists_per90",
-    "shots_per90",
-    "shots_on_target_per90",
-    "xg_per90",
-    # Création
-    "key_passes_per90",
-    "passes_progressive_per90",
-    "passes_into_final_third_per90",
-    # Pressing / défense
-    "pressures_per90",
-    "tackles_per90",
-    "interceptions_per90",
-    "blocks_per90",
-    # Dribbles / progression
-    "dribbles_completed_per90",
-    "carries_progressive_per90",
-    # Duels
-    "aerials_won_per90",
-    "aerials_won_pct",
-]
-
-PLAYER_FEATURE_ALIASES: dict[str, list[str]] = {
-    "goals_per90":                  ["goals_per90", "gls_per90", "Gls_per90"],
-    "assists_per90":                ["assists_per90", "ast_per90"],
-    "shots_per90":                  ["shots_per90", "sh_per90"],
-    "shots_on_target_per90":        ["shots_on_target_per90", "sot_per90"],
-    "xg_per90":                     ["xg_per90", "xG_per90", "npxg_per90"],
-    "key_passes_per90":             ["key_passes_per90", "kp_per90"],
-    "passes_progressive_per90":     ["passes_progressive_per90", "prg_pass_per90"],
-    "passes_into_final_third_per90":["passes_into_final_third_per90", "f3_per90"],
-    "pressures_per90":              ["pressures_per90", "press_per90"],
-    "tackles_per90":                ["tackles_per90", "tkl_per90"],
-    "interceptions_per90":          ["interceptions_per90", "int_per90"],
-    "blocks_per90":                 ["blocks_per90", "blk_per90"],
-    "dribbles_completed_per90":     ["dribbles_completed_per90", "succ_drb_per90"],
-    "carries_progressive_per90":    ["carries_progressive_per90", "prg_carry_per90"],
-    "aerials_won_per90":            ["aerials_won_per90", "won_aerial_per90"],
-    "aerials_won_pct":              ["aerials_won_pct", "won_pct_aerial"],
-}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _resolve_columns(df: pd.DataFrame, aliases: dict[str, list[str]]) -> dict[str, str]:
-    """Retourne un mapping {feature_name: actual_column} pour les features disponibles."""
-    resolved = {}
-    for feat, candidates in aliases.items():
-        for cand in candidates:
-            if cand in df.columns:
-                resolved[feat] = cand
-                break
-    return resolved
-
-
-def _normalize_per90(df: pd.DataFrame, raw_col: str, minutes_col: str) -> pd.Series:
-    """Calcule les stats per90 à la volée si elles n'existent pas."""
-    return (df[raw_col] / df[minutes_col].clip(lower=1)) * 90
 
 
 def prepare_team_features(teams_df: pd.DataFrame) -> pd.DataFrame:
-    """Extrait et nettoie les features du style de jeu des équipes."""
-    resolved = _resolve_columns(teams_df, TEAM_FEATURE_ALIASES)
-
+    """Extrait et nettoie les features style d equipe pour KMeans."""
     X = pd.DataFrame(index=teams_df.index)
-    for feat, col in resolved.items():
-        X[feat] = pd.to_numeric(teams_df[col], errors="coerce")
 
-    # Remplir les NaN par la médiane
+    # Features directes
+    for col in TEAM_DIRECT_FEATURES:
+        if col in teams_df.columns:
+            X[col] = pd.to_numeric(teams_df[col], errors="coerce")
+
+    # Features calculees per-90
+    mp_col = "Playing Time_90s" if "Playing Time_90s" in teams_df.columns else "Playing Time_MP"
+    if mp_col in teams_df.columns:
+        denom = teams_df[mp_col].clip(lower=1)
+        for feat_name, raw_col in TEAM_COMPUTED_PER90.items():
+            if raw_col in teams_df.columns:
+                X[feat_name] = pd.to_numeric(teams_df[raw_col], errors="coerce") / denom
+
     X = X.fillna(X.median(numeric_only=True))
     return X
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Features joueur  —  profil tactique (RF + KNN)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Colonnes directement disponibles dans players_raw.csv (deja en per-90)
+PLAYER_DIRECT_FEATURES = [
+    "Per 90 Minutes_Gls",     # buts / 90
+    "Per 90 Minutes_Ast",     # passes decisives / 90
+    "Per 90 Minutes_G+A",     # contributions offensives / 90
+    "Standard_Sh/90",         # tirs / 90
+    "Standard_SoT/90",        # tirs cadres / 90
+    "Standard_G/SoT",         # conversion
+    "Standard_SoT%",          # precision tirs
+]
+
+# Colonnes a calculer en per-90 (raw / Playing Time_90s)
+PLAYER_COMPUTED_PER90 = {
+    "int_per90":  "Performance_Int",   # interceptions
+    "tklw_per90": "Performance_TklW",  # tacles reussis
+    "fls_per90":  "Performance_Fls",   # fautes commises (agressivite)
+    "fld_per90":  "Performance_Fld",   # fautes subies (dribbles proxy)
+    "crs_per90":  "Performance_Crs",   # centres
+    "off_per90":  "Performance_Off",   # hors-jeu (attaquants)
+    "crd_per90":  "Performance_CrdY",  # cartons jaunes
+}
 
 
 def prepare_player_features(players_df: pd.DataFrame) -> pd.DataFrame:
-    """Extrait et nettoie les features du profil tactique des joueurs."""
-    resolved = _resolve_columns(players_df, PLAYER_FEATURE_ALIASES)
-
-    # Essayer de calculer les per90 manquants si minutes disponible
-    minutes_col = next(
-        (c for c in players_df.columns if c.lower() in ["minutes", "min", "mins", "minutes_90s"]),
-        None,
-    )
-
+    """Extrait et nettoie les features joueur pour RF et KNN."""
     X = pd.DataFrame(index=players_df.index)
-    for feat, col in resolved.items():
-        X[feat] = pd.to_numeric(players_df[col], errors="coerce")
 
-    # Si certaines per90 manquent, essayer de les dériver
-    if minutes_col:
-        for feat in PLAYER_ROLE_FEATURES:
-            if feat not in X.columns or X[feat].isna().all():
-                base = feat.replace("_per90", "")
-                if base in players_df.columns:
-                    X[feat] = _normalize_per90(players_df, base, minutes_col)
+    # Features directes
+    for col in PLAYER_DIRECT_FEATURES:
+        if col in players_df.columns:
+            X[col] = pd.to_numeric(players_df[col], errors="coerce")
+
+    # Features calculees per-90
+    if "Playing Time_90s" in players_df.columns:
+        denom = players_df["Playing Time_90s"].clip(lower=1)
+        for feat_name, raw_col in PLAYER_COMPUTED_PER90.items():
+            if raw_col in players_df.columns:
+                X[feat_name] = pd.to_numeric(players_df[raw_col], errors="coerce") / denom
 
     X = X.fillna(X.median(numeric_only=True))
     return X
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Rôle tactique — mapping position → label
+# Role tactique  —  mapping position -> label (pour Random Forest)
 # ─────────────────────────────────────────────────────────────────────────────
 
 POSITION_TO_ROLE = {
-    # Gardiens
     "GK": "goalkeeper",
-    # Défenseurs
-    "CB": "defender", "RB": "defender", "LB": "defender",
-    "RWB": "defender", "LWB": "defender", "DF": "defender",
-    # Milieux défensifs / récupérateurs
-    "DM": "defensive_mid", "CDM": "defensive_mid",
-    # Milieux centraux / box-to-box
-    "CM": "central_mid", "MF": "central_mid",
-    # Milieux offensifs / créateurs
-    "AM": "attacking_mid", "CAM": "attacking_mid",
-    # Ailiers
-    "RW": "winger", "LW": "winger", "RM": "winger", "LM": "winger",
-    # Attaquants
-    "CF": "striker", "ST": "striker", "FW": "striker",
+    "DF": "defender",
+    "MF": "midfielder",
+    "FW": "forward",
 }
 
 
 def get_role_label(position_str: str) -> str:
-    """
-    Convertit la chaîne de position FBref (ex: 'MF,FW' ou 'DF') en rôle tactique.
-    En cas de position mixte, on prend la première.
-    """
-    if pd.isna(position_str) or position_str == "":
+    """Convertit la position FBref (ex: 'MF,FW') en role simplifie."""
+    if pd.isna(position_str) or str(position_str).strip() == "":
         return "unknown"
     primary = str(position_str).split(",")[0].strip().upper()
     return POSITION_TO_ROLE.get(primary, "unknown")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Style d'équipe — nommage des clusters KMeans
+# Nommage clusters KMeans
 # ─────────────────────────────────────────────────────────────────────────────
 
 CLUSTER_STYLE_NAMES = {
-    0: "Jeu de possession",
-    1: "Pressing haut",
+    0: "Possession",
+    1: "Pressing / intensite",
     2: "Jeu direct / physique",
     3: "Bloc bas / contre-attaque",
 }
