@@ -22,8 +22,8 @@ STREAMLIT_PORT = 8501
 # Phase 1 : TEST_MODE = True  → 1 ligue, 1 club
 # Phase 2 : TEST_MODE = False → toutes les ligues
 TEST_MODE  = True
-TEST_LEAGUE = "ENG-Championship"
-TEST_CLUB   = "Leeds United"
+TEST_LEAGUE = "ENG-Premier League"
+TEST_CLUB   = "Burnley"
 
 # ── Data settings ─────────────────────────────────────────────────────────────
 # Ligues secondaires : vivier principal de joueurs à recruter
@@ -52,7 +52,7 @@ TOP5_LEAGUES = [
 # (titulaire = ~2500 min sur 38 matchs, on garde les joueurs peu utilisés)
 MIN_MINUTES_TOP5 = 900
 
-SEASON      = "2324"   # saison 2023-24
+SEASON      = "2526"   # saison 2025-26
 MIN_MINUTES = 500      # minutes minimum pour inclure un joueur (ligues secondaires)
 
 # ── Model registry ────────────────────────────────────────────────────────────
