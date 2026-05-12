@@ -35,7 +35,7 @@ try:
     import soccerdata as sd
     from soccerdata.fbref import FBref, FBREF_API, _parse_table
     from soccerdata._common import standardize_colnames
-    from lxml import html as lxml_html
+    from lxml import html as lxml_html, etree as lxml_etree
 except ImportError as e:
     print(f"Dependance manquante : {e}. Lancez : pip install soccerdata lxml")
     sys.exit(1)
@@ -81,12 +81,26 @@ def _fetch_extra_stat(fbref: FBref, stat_type: str) -> pd.DataFrame:
         try:
             reader = fbref.get(url, filepath)
             tree   = lxml_html.parse(reader)
-            tables = tree.xpath(f"//table[@id='stats_{stat_type}']")
-            if not tables:
-                continue
-            df = _flatten_columns(_parse_table(tables[0]).pipe(standardize_colnames))
+            if big_five:
+                # Big 5 : table directement dans le HTML
+                tables = tree.xpath(f"//table[@id='stats_{stat_type}']")
+                if not tables:
+                    continue
+                html_table = tables[0]
+            else:
+                # Ligues individuelles : donnees dans un commentaire HTML
+                comments = tree.xpath(f"//comment()[contains(.,'div_stats_{stat_type}')]")
+                if not comments:
+                    continue
+                parser = lxml_etree.HTMLParser(recover=True)
+                parsed = lxml_etree.fromstring(comments[0].text, parser)
+                tables = parsed.xpath(f"//table[contains(@id,'stats_{stat_type}')]")
+                if not tables:
+                    continue
+                html_table = tables[0]
+            df = _flatten_columns(_parse_table(html_table).pipe(standardize_colnames))
             df["league"] = lkey
-            df["season"] = skey
+            df["season"] = int(skey) if str(skey).isdigit() else skey
             frames.append(df)
         except Exception as exc:
             print(f"    SKIP {lkey} {stat_type} ({exc})")
@@ -130,6 +144,13 @@ def fetch_player_stats(
         merged = merged.merge(other, on=keys, how="left", suffixes=("", "_dup"))
         merged.drop(columns=[c for c in merged.columns if c.endswith("_dup")], inplace=True)
 
+    # Normaliser season en int64 dans merged (soccerdata renvoie la saison en string)
+    if "season" in merged.columns:
+        merged["season"] = pd.to_numeric(merged["season"], errors="coerce").fillna(0).astype("int64")
+    for k in ["player", "team", "league"]:
+        if k in merged.columns:
+            merged[k] = merged[k].astype(object)
+
     # Stats etendues via scraping direct
     for stat in EXTRA_STAT_TYPES:
         print(f"  stat_type={stat} (etendu)...")
@@ -145,7 +166,17 @@ def fetch_player_stats(
             keep_id   = [c for c in id_cols if c in extra.columns]
             new_cols  = [c for c in extra.columns if c not in merged.columns and c not in
                          ["Rk", "Born", "90s", "Age", "Pos", "Nation", "Matches", "age", "nation", "pos"]]
-            extra_sub = extra[keep_id + new_cols].drop_duplicates(subset=keep_id)
+            extra_sub = extra[keep_id + new_cols].drop_duplicates(subset=keep_id).copy()
+            # Normaliser les cles de jointure en object/int64 pour eviter mismatch Arrow vs StringDtype
+            for k in keep_id:
+                if k in extra_sub.columns:
+                    if k == "season":
+                        extra_sub[k] = pd.to_numeric(extra_sub[k], errors="coerce").astype("int64")
+                    else:
+                        extra_sub[k] = extra_sub[k].astype(object)
+            for k in keep_id:
+                if k in merged.columns and k != "season":
+                    merged[k] = merged[k].astype(object)
             merged    = merged.merge(extra_sub, on=keep_id, how="left", suffixes=("", "_dup"))
             merged.drop(columns=[c for c in merged.columns if c.endswith("_dup")], inplace=True)
             print(f"    +{len(new_cols)} colonnes : {new_cols[:5]}...")

@@ -55,8 +55,7 @@ def train_rf_role(players_df: pd.DataFrame) -> Pipeline:
     print("Random Forest — role tactique...")
     df = players_df.copy()
 
-    # La colonne position s'appelle "pos" dans FBref via soccerdata
-    pos_col = "pos" if "pos" in df.columns else "position"
+    pos_col = next((c for c in ["pos", "pos_", "position"] if c in df.columns), "pos")
     df["role_label"] = df[pos_col].apply(get_role_label)
     df = df[df["role_label"] != "unknown"].copy()
 
@@ -91,7 +90,7 @@ def train_knn_similarity(players_df: pd.DataFrame) -> dict:
     knn = NearestNeighbors(n_neighbors=11, metric="cosine", n_jobs=-1)
     knn.fit(X_scaled)
 
-    pos_col = "pos" if "pos" in players_df.columns else "position"
+    pos_col = next((c for c in ["pos", "pos_", "position"] if c in players_df.columns), "pos")
     player_index = players_df[["player", "team", "league", pos_col, "tier"]].reset_index(drop=True)
 
     return {

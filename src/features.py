@@ -54,7 +54,8 @@ def prepare_team_features(teams_df: pd.DataFrame) -> pd.DataFrame:
             if raw_col in teams_df.columns:
                 X[feat_name] = pd.to_numeric(teams_df[raw_col], errors="coerce") / denom
 
-    X = X.fillna(X.median(numeric_only=True))
+    X = X.fillna(X.median(numeric_only=True)).fillna(0)
+    X = X.loc[:, X.std() > 0]
     return X
 
 
@@ -101,7 +102,9 @@ def prepare_player_features(players_df: pd.DataFrame) -> pd.DataFrame:
             if raw_col in players_df.columns:
                 X[feat_name] = pd.to_numeric(players_df[raw_col], errors="coerce") / denom
 
-    X = X.fillna(X.median(numeric_only=True))
+    X = X.fillna(X.median(numeric_only=True)).fillna(0)
+    # Supprimer les colonnes constantes (std=0) qui feraient planter le scaler
+    X = X.loc[:, X.std() > 0]
     return X
 
 
