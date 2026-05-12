@@ -23,7 +23,7 @@ STREAMLIT_PORT = 8501
 # Phase 2 : TEST_MODE = False → toutes les ligues
 TEST_MODE   = True
 TEST_LEAGUE = "ENG-Championship"
-TEST_CLUB   = "Sheffield United"
+TEST_CLUB   = None  # None = ligue entiere
 
 # ── Data settings ─────────────────────────────────────────────────────────────
 # Ligues secondaires : vivier principal de joueurs à recruter
