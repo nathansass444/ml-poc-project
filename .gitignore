@@ -1,0 +1,39 @@
+# Environnement virtuel
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Données (trop lourdes pour git)
+data/*.csv
+data/*.parquet
+data/*.json
+downloaded_files/
+
+# Modèles entraînés (régénérables)
+models/*.joblib
+models/*.pkl
+
+# Résultats et visualisations (régénérables)
+results/*.csv
+plots/*.png
+plots/*.html
+
+# Logs
+logs/*.log
+
+# Variables d'environnement (sécurité)
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
