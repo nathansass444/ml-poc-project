@@ -45,17 +45,17 @@ def fetch_player_stats(leagues: list[str], club_filter: str | None = None) -> pd
     print(f"Téléchargement stats joueurs — ligues : {leagues}")
     fbref = sd.FBref(leagues=leagues, seasons=SEASON)
 
-    stat_types = ["standard", "shooting", "passing", "misc"]
+    stat_types = ["standard", "shooting", "playing_time", "misc"]
     frames: list[pd.DataFrame] = []
 
     for stat in stat_types:
-        print(f"  → stat_type={stat} …")
+        print(f"  stat_type={stat}...")
         try:
             df = fbref.read_player_season_stats(stat_type=stat)
             df = _flatten_columns(df).reset_index()
             frames.append(df)
         except Exception as exc:
-            print(f"  ⚠  {stat} ignoré ({exc})")
+            print(f"  SKIP {stat} ({exc})")
 
     if not frames:
         raise RuntimeError("Aucune stat joueur récupérée.")
@@ -69,17 +69,22 @@ def fetch_player_stats(leagues: list[str], club_filter: str | None = None) -> pd
         merged = merged.merge(other, on=keys, how="left", suffixes=("", "_dup"))
         merged.drop(columns=[c for c in merged.columns if c.endswith("_dup")], inplace=True)
 
-    # Filtre minutes minimum
-    min_col = next((c for c in merged.columns if "minutes" in c.lower() or c.lower() in ("min", "mins")), None)
+    # Filtre minutes minimum — cherche "Playing Time_Min" en priorité
+    min_col = next(
+        (c for c in merged.columns if c.lower() == "playing time_min"),
+        next((c for c in merged.columns if c.lower().endswith("_min") and "playing" in c.lower()), None),
+    )
     if min_col:
         merged = merged[merged[min_col] >= MIN_MINUTES].copy()
+    else:
+        print("  WARN: colonne minutes non trouvée, filtre MIN_MINUTES ignoré")
 
     # Filtre optionnel sur un club
     if club_filter:
         team_col = next((c for c in merged.columns if c.lower() == "team"), None)
         if team_col:
             merged = merged[merged[team_col] == club_filter].copy()
-            print(f"  Filtre club appliqué : {club_filter} → {len(merged)} joueurs")
+            print(f"  Filtre club : {club_filter} -> {len(merged)} joueurs")
 
     return merged.reset_index(drop=True)
 
@@ -88,17 +93,17 @@ def fetch_team_stats(leagues: list[str]) -> pd.DataFrame:
     print(f"Téléchargement stats équipes — ligues : {leagues}")
     fbref = sd.FBref(leagues=leagues, seasons=SEASON)
 
-    stat_types = ["standard", "shooting", "passing"]
+    stat_types = ["standard", "shooting", "playing_time", "misc"]
     frames: list[pd.DataFrame] = []
 
     for stat in stat_types:
-        print(f"  → stat_type={stat} …")
+        print(f"  stat_type={stat}...")
         try:
             df = fbref.read_team_season_stats(stat_type=stat)
             df = _flatten_columns(df).reset_index()
             frames.append(df)
         except Exception as exc:
-            print(f"  ⚠  {stat} ignoré ({exc})")
+            print(f"  SKIP {stat} ({exc})")
 
     if not frames:
         raise RuntimeError("Aucune stat équipe récupérée.")
@@ -135,10 +140,10 @@ def main() -> None:
     players.to_csv(players_path, index=False)
     teams.to_csv(teams_path,     index=False)
 
-    print(f"\n{len(players):,} joueurs  → {players_path}")
-    print(f"{len(teams):,} équipes  → {teams_path}")
-    print("\nColonnes joueurs :", list(players.columns[:10]), "…")
-    print("Colonnes équipes :", list(teams.columns[:10]),   "…")
+    print(f"\n{len(players):,} joueurs  -> {players_path}")
+    print(f"{len(teams):,} equipes  -> {teams_path}")
+    print("\nColonnes joueurs :", list(players.columns[:10]))
+    print("Colonnes equipes :", list(teams.columns[:10]))
 
 
 if __name__ == "__main__":
