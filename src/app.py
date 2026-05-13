@@ -64,28 +64,21 @@ def load_data():
         if raw in players.columns:
             players[feat] = pd.to_numeric(players[raw], errors="coerce") / d
 
-    # Merge donnees Transfermarkt (valeur marchande + fin de contrat)
-    tm_path = DATA_DIR / "tm_players.csv"
-    if tm_path.exists():
-        tm = pd.read_csv(tm_path)[["player_tm", "market_value_eur", "contract_end"]]
-        tm = tm.drop_duplicates(subset=["player_tm"])
-        players = players.merge(tm, left_on="player", right_on="player_tm", how="left")
-        players.drop(columns=["player_tm"], inplace=True, errors="ignore")
+    # Merge enrichissement (TM + Capology + estimation) pre-calcule
+    enrich_path = DATA_DIR / "player_enrichment.csv"
+    if enrich_path.exists():
+        enrich = pd.read_csv(enrich_path)[
+            ["player", "team", "league", "market_value_eur", "contract_end",
+             "annual_gross_eur", "salary_estimated"]
+        ].drop_duplicates(subset=["player", "team", "league"])
+        players = players.merge(enrich, on=["player", "team", "league"], how="left")
     else:
-        players["market_value_eur"] = None
-        players["contract_end"]     = None
+        players["market_value_eur"]  = None
+        players["contract_end"]      = None
+        players["annual_gross_eur"]  = None
+        players["salary_estimated"]  = False
 
-    # Merge salaires Capology
-    sal_path = DATA_DIR / "salaries.csv"
-    if sal_path.exists():
-        sal = pd.read_csv(sal_path)[["player_cap", "annual_gross_eur", "league_fbref"]]
-        sal = sal.drop_duplicates(subset=["player_cap", "league_fbref"])
-        players = players.merge(
-            sal, left_on=["player", "league"], right_on=["player_cap", "league_fbref"], how="left"
-        )
-        players.drop(columns=["player_cap", "league_fbref"], inplace=True, errors="ignore")
-    else:
-        players["annual_gross_eur"] = None
+    players["salary_estimated"] = players["salary_estimated"].fillna(False)
 
     return players, pd.read_csv(t)
 
@@ -483,9 +476,11 @@ def build_app() -> None:
             # Donnees TM + Capology (depuis players_df pour avoir le merge complet)
             cand_full_row = players_df[players_df["player"] == row["player"]]
             cand_data = cand_full_row.iloc[0] if not cand_full_row.empty else pd.Series(dtype=object)
-            mv_str  = _fmt_market_value(cand_data.get("market_value_eur"))
-            ct_str  = _fmt_contract_end(cand_data.get("contract_end"))
-            sal_str = _fmt_salary(cand_data.get("annual_gross_eur"))
+            mv_str    = _fmt_market_value(cand_data.get("market_value_eur"))
+            ct_str    = _fmt_contract_end(cand_data.get("contract_end"))
+            sal_raw   = _fmt_salary(cand_data.get("annual_gross_eur"))
+            estimated = bool(cand_data.get("salary_estimated", False))
+            sal_str   = f"~{sal_raw}" if estimated and sal_raw != "N/A" else sal_raw
 
             # En-tete de carte
             st.markdown(
