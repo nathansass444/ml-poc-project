@@ -211,6 +211,8 @@ def find_replacements(
     role_filter: str,
     exclude_leagues: list[str],
     tier_filter: str,
+    budget_max_eur: float | None = None,
+    include_unknown_mv: bool = True,
     n: int = 10,
 ) -> pd.DataFrame:
     scaler       = knn_data["scaler"]
@@ -227,7 +229,8 @@ def find_replacements(
     results["similarity"] = sims
     results = results.merge(
         players_df[["player", "team", "league", "role", "tier",
-                    "Playing Time_Min", "age", "nation"]].drop_duplicates("player"),
+                    "Playing Time_Min", "age", "nation",
+                    "market_value_eur"]].drop_duplicates("player"),
         on=["player", "team", "league"],
         how="left",
     )
@@ -239,6 +242,15 @@ def find_replacements(
         results = results[~results["league"].isin(exclude_leagues)]
     if tier_filter != "Tous":
         results = results[results["tier"] == ("secondary" if tier_filter == "Ligues secondaires" else "top5")]
+
+    # Filtre budgetaire
+    if budget_max_eur is not None:
+        has_mv   = results["market_value_eur"].notna()
+        in_budget = results["market_value_eur"] <= budget_max_eur
+        if include_unknown_mv:
+            results = results[~has_mv | in_budget]   # inclut N/A + sous budget
+        else:
+            results = results[has_mv & in_budget]    # uniquement ceux sous budget connu
 
     return results.nlargest(n, "similarity").reset_index(drop=True)
 
@@ -326,6 +338,15 @@ def build_app() -> None:
 
         selected_player = st.selectbox("Joueur a remplacer", team_players)
 
+        # Budget par defaut = valeur marchande du joueur a remplacer (ou 20M)
+        ref_player_row = players_df[players_df["player"] == selected_player]
+        ref_mv = None
+        if not ref_player_row.empty:
+            mv_raw = ref_player_row["market_value_eur"].iloc[0]
+            if pd.notna(mv_raw):
+                ref_mv = float(mv_raw)
+        default_budget_m = round((ref_mv / 1_000_000) if ref_mv else 20.0, 1)
+
         # 3. Filtres
         st.markdown("---")
         st.markdown("**Filtres**")
@@ -337,6 +358,17 @@ def build_app() -> None:
         )
 
         exclude_own_league = st.checkbox("Exclure la ligue de l equipe", value=False)
+
+        st.markdown("**Budget max (valeur marchande)**")
+        budget_max_m = st.slider(
+            "Budget max (M€)",
+            min_value=0.1, max_value=200.0,
+            value=float(min(default_budget_m, 200.0)),
+            step=0.5,
+            format="%.1f M€",
+        )
+        include_unknown_mv = st.checkbox("Inclure joueurs sans valeur connue", value=True)
+
         n_recommendations  = st.slider("Nombre de candidats", 5, 20, 10)
 
         st.markdown("---")
@@ -392,6 +424,8 @@ def build_app() -> None:
             role_filter=player_role,
             exclude_leagues=exclude_leagues,
             tier_filter=tier_filter,
+            budget_max_eur=budget_max_m * 1_000_000,
+            include_unknown_mv=include_unknown_mv,
             n=n_recommendations,
         )
 
