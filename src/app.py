@@ -64,6 +64,17 @@ def load_data():
         if raw in players.columns:
             players[feat] = pd.to_numeric(players[raw], errors="coerce") / d
 
+    # Merge donnees Transfermarkt (valeur marchande + fin de contrat)
+    tm_path = DATA_DIR / "tm_players.csv"
+    if tm_path.exists():
+        tm = pd.read_csv(tm_path)[["player_tm", "market_value_eur", "contract_end"]]
+        tm = tm.drop_duplicates(subset=["player_tm"])
+        players = players.merge(tm, left_on="player", right_on="player_tm", how="left")
+        players.drop(columns=["player_tm"], inplace=True, errors="ignore")
+    else:
+        players["market_value_eur"] = None
+        players["contract_end"]     = None
+
     return players, pd.read_csv(t)
 
 
@@ -76,6 +87,29 @@ def load_models():
         return kmeans, rf, knn_data
     except FileNotFoundError:
         return None, None, None
+
+
+def _fmt_market_value(val) -> str:
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return "N/A"
+    val = float(val)
+    if val >= 1_000_000:
+        return f"{val/1_000_000:.1f}M€"
+    if val >= 1_000:
+        return f"{val/1_000:.0f}K€"
+    return f"{int(val)}€"
+
+
+def _fmt_contract_end(date_str) -> str:
+    if not date_str or (isinstance(date_str, float) and np.isnan(date_str)):
+        return "N/A"
+    try:
+        from datetime import date
+        d = date.fromisoformat(str(date_str))
+        months = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"]
+        return f"{months[d.month-1]} {d.year}"
+    except Exception:
+        return str(date_str)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -380,21 +414,30 @@ def build_app() -> None:
         st.caption("Bordure bleue = ligue secondaire  |  Bordure orange = Top 5 (peu utilise)")
 
         for i, (_, row) in enumerate(replacements.iterrows()):
-            sim_pct   = int(row["similarity"] * 100)
-            sim_color = "#7bc67e" if sim_pct >= 80 else "#f7b731" if sim_pct >= 60 else "#e74c3c"
-            tier_cls  = "top5" if row.get("tier") == "top5" else ""
+            sim_pct    = int(row["similarity"] * 100)
+            sim_color  = "#7bc67e" if sim_pct >= 80 else "#f7b731" if sim_pct >= 60 else "#e74c3c"
+            tier_cls   = "top5" if row.get("tier") == "top5" else ""
             tier_badge = '<span class="tier-badge-top5">TOP 5</span>' if tier_cls == "top5" else ""
             age        = str(row.get("age", "?")).split("-")[0]
             nation     = row.get("nation", "")
             mins       = int(row["Playing Time_Min"]) if pd.notna(row.get("Playing Time_Min")) else "?"
             bar_width  = sim_pct
 
+            # Donnees TM (depuis players_df pour avoir le merge complet)
+            cand_tm = players_df[players_df["player"] == row["player"]]
+            mv_str  = _fmt_market_value(cand_tm["market_value_eur"].iloc[0] if not cand_tm.empty else None)
+            ct_str  = _fmt_contract_end(cand_tm["contract_end"].iloc[0]     if not cand_tm.empty else None)
+
             # En-tete de carte
             st.markdown(
                 f'<div class="player-card {tier_cls}">'
                 f'<span class="player-name">#{i+1} &nbsp;{row["player"]}</span>{tier_badge}<br>'
                 f'<span class="player-meta">{row["team"]} &nbsp;·&nbsp; {row["league"]}</span><br>'
-                f'<span class="player-meta">{age} ans &nbsp;·&nbsp; {nation} &nbsp;·&nbsp; {mins} min</span>'
+                f'<span class="player-meta">'
+                f'{age} ans &nbsp;·&nbsp; {nation} &nbsp;·&nbsp; {mins} min'
+                f' &nbsp;·&nbsp; <b style="color:#00d4ff">{mv_str}</b>'
+                f' &nbsp;·&nbsp; Contrat : <b style="color:#f7b731">{ct_str}</b>'
+                f'</span>'
                 f'<div class="sim-bar-wrap"><div class="sim-bar" '
                 f'style="width:{bar_width}%; background:{sim_color};"></div></div>'
                 f'<span class="sim-label" style="color:{sim_color}">Similarite : {sim_pct}%</span>'
