@@ -16,7 +16,7 @@ import numpy as np
 
 # Colonnes directement disponibles dans teams_raw.csv
 TEAM_DIRECT_FEATURES = [
-    "Poss",                   # % possession
+    "Poss_",                  # % possession
     "Standard_Sh/90",         # tirs / 90
     "Standard_SoT/90",        # tirs cadres / 90
     "Standard_SoT%",          # precision tirs
@@ -55,7 +55,6 @@ def prepare_team_features(teams_df: pd.DataFrame) -> pd.DataFrame:
                 X[feat_name] = pd.to_numeric(teams_df[raw_col], errors="coerce") / denom
 
     X = X.fillna(X.median(numeric_only=True)).fillna(0)
-    X = X.loc[:, X.std() > 0]
     return X
 
 
@@ -103,8 +102,6 @@ def prepare_player_features(players_df: pd.DataFrame) -> pd.DataFrame:
                 X[feat_name] = pd.to_numeric(players_df[raw_col], errors="coerce") / denom
 
     X = X.fillna(X.median(numeric_only=True)).fillna(0)
-    # Supprimer les colonnes constantes (std=0) qui feraient planter le scaler
-    X = X.loc[:, X.std() > 0]
     return X
 
 
