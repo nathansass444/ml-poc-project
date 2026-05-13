@@ -299,7 +299,7 @@ def build_app() -> None:
             st.stop()
 
         X_team     = prepare_team_features(team_row)
-        cluster_id = int(kmeans.predict(X_team)[0])
+        cluster_id = int(kmeans.predict(X_team.values)[0])
         style_name = label_team_cluster(cluster_id)
 
         # Infos joueur cible
@@ -453,7 +453,7 @@ def build_app() -> None:
         else:
             rows        = teams_df[teams_df["team"].isin(compare_teams)]
             X_compare   = prepare_team_features(rows)
-            cluster_ids = kmeans.predict(X_compare)
+            cluster_ids = kmeans.predict(X_compare.values)
 
             cols = st.columns(len(compare_teams))
             for i, (team, cid) in enumerate(zip(compare_teams, cluster_ids)):
@@ -468,7 +468,7 @@ def build_app() -> None:
 
         st.markdown("### Distribution des styles — toutes les equipes")
         all_X       = prepare_team_features(teams_df)
-        all_labels  = kmeans.predict(all_X)
+        all_labels  = kmeans.predict(all_X.values)
         counts      = pd.Series(all_labels).value_counts().sort_index()
         style_names = [label_team_cluster(i) for i in counts.index]
 
