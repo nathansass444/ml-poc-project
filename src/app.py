@@ -75,6 +75,18 @@ def load_data():
         players["market_value_eur"] = None
         players["contract_end"]     = None
 
+    # Merge salaires Capology
+    sal_path = DATA_DIR / "salaries.csv"
+    if sal_path.exists():
+        sal = pd.read_csv(sal_path)[["player_cap", "annual_gross_eur", "league_fbref"]]
+        sal = sal.drop_duplicates(subset=["player_cap", "league_fbref"])
+        players = players.merge(
+            sal, left_on=["player", "league"], right_on=["player_cap", "league_fbref"], how="left"
+        )
+        players.drop(columns=["player_cap", "league_fbref"], inplace=True, errors="ignore")
+    else:
+        players["annual_gross_eur"] = None
+
     return players, pd.read_csv(t)
 
 
@@ -87,6 +99,17 @@ def load_models():
         return kmeans, rf, knn_data
     except FileNotFoundError:
         return None, None, None
+
+
+def _fmt_salary(val) -> str:
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return "N/A"
+    val = float(val)
+    if val >= 1_000_000:
+        return f"{val/1_000_000:.1f}M€/an"
+    if val >= 1_000:
+        return f"{val/1_000:.0f}K€/an"
+    return f"{int(val)}€/an"
 
 
 def _fmt_market_value(val) -> str:
@@ -423,10 +446,12 @@ def build_app() -> None:
             mins       = int(row["Playing Time_Min"]) if pd.notna(row.get("Playing Time_Min")) else "?"
             bar_width  = sim_pct
 
-            # Donnees TM (depuis players_df pour avoir le merge complet)
-            cand_tm = players_df[players_df["player"] == row["player"]]
-            mv_str  = _fmt_market_value(cand_tm["market_value_eur"].iloc[0] if not cand_tm.empty else None)
-            ct_str  = _fmt_contract_end(cand_tm["contract_end"].iloc[0]     if not cand_tm.empty else None)
+            # Donnees TM + Capology (depuis players_df pour avoir le merge complet)
+            cand_full_row = players_df[players_df["player"] == row["player"]]
+            cand_data = cand_full_row.iloc[0] if not cand_full_row.empty else pd.Series(dtype=object)
+            mv_str  = _fmt_market_value(cand_data.get("market_value_eur"))
+            ct_str  = _fmt_contract_end(cand_data.get("contract_end"))
+            sal_str = _fmt_salary(cand_data.get("annual_gross_eur"))
 
             # En-tete de carte
             st.markdown(
@@ -436,6 +461,7 @@ def build_app() -> None:
                 f'<span class="player-meta">'
                 f'{age} ans &nbsp;·&nbsp; {nation} &nbsp;·&nbsp; {mins} min'
                 f' &nbsp;·&nbsp; <b style="color:#00d4ff">{mv_str}</b>'
+                f' &nbsp;·&nbsp; <b style="color:#7bc67e">{sal_str}</b>'
                 f' &nbsp;·&nbsp; Contrat : <b style="color:#f7b731">{ct_str}</b>'
                 f'</span>'
                 f'<div class="sim-bar-wrap"><div class="sim-bar" '
