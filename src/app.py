@@ -43,8 +43,12 @@ def load_data():
     if not p.exists() or not t.exists():
         return None, None
     players = pd.read_csv(p)
-    pos_col = "pos" if "pos" in players.columns else "position"
+    pos_col = next((c for c in ["pos", "pos_", "position"] if c in players.columns), "pos_")
     players["role"] = players[pos_col].apply(get_role_label)
+    # Normaliser les colonnes avec underscore final
+    for col_under, col_clean in [("age_", "age"), ("nation_", "nation"), ("pos_", "pos")]:
+        if col_under in players.columns and col_clean not in players.columns:
+            players[col_clean] = players[col_under]
 
     # Pre-calcul des stats per-90 pour affichage dans les cartes
     d = players["Playing Time_90s"].clip(lower=1)
