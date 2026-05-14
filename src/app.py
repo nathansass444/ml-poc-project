@@ -71,10 +71,12 @@ def load_data():
     # Merge enrichissement (TM + Capology + estimation) pre-calcule
     enrich_path = DATA_DIR / "player_enrichment.csv"
     if enrich_path.exists():
-        enrich = pd.read_csv(enrich_path)[
-            ["player", "team", "league", "market_value_eur", "contract_end",
-             "annual_gross_eur", "salary_estimated"]
-        ].drop_duplicates(subset=["player", "team", "league"])
+        cols = ["player", "team", "league", "market_value_eur", "contract_end",
+                "annual_gross_eur", "salary_estimated"]
+        enrich_df = pd.read_csv(enrich_path)
+        if "foot" in enrich_df.columns:
+            cols.append("foot")
+        enrich = enrich_df[cols].drop_duplicates(subset=["player", "team", "league"])
         players = players.merge(enrich, on=["player", "team", "league"], how="left")
     else:
         players["market_value_eur"]  = None
@@ -704,6 +706,11 @@ def build_app() -> None:
             sal_raw   = _fmt_salary(cand_data.get("annual_gross_eur"))
             estimated = bool(cand_data.get("salary_estimated", False))
             sal_str   = f"~{sal_raw}" if estimated and sal_raw != "N/A" else sal_raw
+            foot_raw  = cand_data.get("foot", None)
+            foot_str  = {"Droit": "Pied D", "Gauche": "Pied G", "Ambidextre": "Ambidextre"}.get(
+                str(foot_raw) if foot_raw and str(foot_raw) != "nan" else "", ""
+            )
+            foot_color = {"Pied D": "#a29bfe", "Pied G": "#fd79a8", "Ambidextre": "#00cec9"}.get(foot_str, "#888")
 
             # En-tete de carte
             st.markdown(
@@ -712,6 +719,7 @@ def build_app() -> None:
                 f'<span class="player-meta">{row["team"]} &nbsp;·&nbsp; {row["league"]}</span><br>'
                 f'<span class="player-meta">'
                 f'{age} ans &nbsp;·&nbsp; {nation} &nbsp;·&nbsp; {mins} min'
+                + (f' &nbsp;·&nbsp; <b style="color:{foot_color}">{foot_str}</b>' if foot_str else '') +
                 f' &nbsp;·&nbsp; <b style="color:#00d4ff">{mv_str}</b>'
                 f' &nbsp;·&nbsp; <b style="color:#7bc67e">{sal_str}</b>'
                 f' &nbsp;·&nbsp; Contrat : <b style="color:#f7b731">{ct_str}</b>'

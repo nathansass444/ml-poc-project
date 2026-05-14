@@ -120,14 +120,15 @@ def search_player(name: str, team: str, age: int | None = None) -> dict | None:
 
         mv = _parse_mv(row_mv_td.get_text(strip=True)) if row_mv_td else None
 
-        # Fin de contrat depuis le profil
+        # Fin de contrat + pied fort depuis le profil
         profile_link = row.select_one("a[href*='/profil/spieler/']")
         contract_end = None
+        foot         = None
         if profile_link:
             profile_r = _get(BASE_URL + profile_link["href"])
             if profile_r:
-                psoup  = BeautifulSoup(profile_r.text, "html.parser")
-                dates  = [
+                psoup = BeautifulSoup(profile_r.text, "html.parser")
+                dates = [
                     span.get_text(strip=True)
                     for span in psoup.select("span.data-header__content")
                     if re.match(r"\d{2}\.\d{2}\.\d{4}", span.get_text(strip=True))
@@ -137,9 +138,15 @@ def search_player(name: str, team: str, age: int | None = None) -> dict | None:
                 if future:
                     latest = max(future, key=lambda d: (d.split(".")[-1], d.split(".")[1]))
                     contract_end = _parse_date(latest)
+                # Pied fort
+                for span in psoup.select("span.data-header__content"):
+                    t = span.get_text(strip=True).lower()
+                    if t in ("rechts", "links", "beidfussig", "beidf\xfcssig"):
+                        foot = {"rechts": "Droit", "links": "Gauche"}.get(t, "Ambidextre")
+                        break
             time.sleep(0.8)
 
-        return {"market_value_eur": mv, "contract_end": contract_end}
+        return {"market_value_eur": mv, "contract_end": contract_end, "foot": foot}
 
     return None
 
@@ -179,19 +186,20 @@ def main() -> None:
 
         age    = int(row["_age_int"]) if "_age_int" in row and pd.notna(row.get("_age_int")) else None
         result = search_player(row["player"], row["team"], age=age)
-        if result and (result["market_value_eur"] or result["contract_end"]):
+        if result and (result["market_value_eur"] or result["contract_end"] or result.get("foot")):
             # Mettre a jour dans enrich
             mask = (enrich["player"] == row["player"]) & (enrich["league"] == row["league"])
             if mask.any():
                 if result["market_value_eur"]:
                     enrich.loc[mask, "market_value_eur"] = result["market_value_eur"]
-                    # Recalculer le salaire estime si pas de salaire connu
                     sal_mask = mask & enrich["annual_gross_eur"].isna()
                     if sal_mask.any():
                         enrich.loc[sal_mask, "annual_gross_eur"] = result["market_value_eur"] * 0.22
                         enrich.loc[sal_mask, "salary_estimated"] = True
                 if result["contract_end"]:
                     enrich.loc[mask, "contract_end"] = result["contract_end"]
+                if result.get("foot"):
+                    enrich.loc[mask, "foot"] = result["foot"]
             else:
                 # Joueur absent de enrichment, on l ajoute
                 new_row = {

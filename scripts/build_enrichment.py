@@ -164,13 +164,15 @@ def main() -> None:
         players = merge_with_fallback(
             players, tm,
             source_name_col="player_tm",
-            value_cols=["market_value_eur", "contract_end"],
+            value_cols=["market_value_eur", "contract_end", "foot"],
             league_col_source="league_fbref",
         )
         mv_ok = players["market_value_eur"].notna().sum()
         ct_ok = players["contract_end"].notna().sum()
+        ft_ok = players["foot"].notna().sum()
         print(f"  Valeur marchande : {mv_ok:,}/{n} ({100*mv_ok//n}%)")
         print(f"  Fin de contrat   : {ct_ok:,}/{n} ({100*ct_ok//n}%)")
+        print(f"  Pied fort        : {ft_ok:,}/{n} ({100*ft_ok//n}%)")
     else:
         print("tm_players.csv manquant — TM skip")
         players["market_value_eur"] = np.nan

@@ -140,10 +140,19 @@ def _scrape_team_squad(squad_path: str) -> list[dict]:
                 contract_end = _parse_contract_end(t)
                 break
 
+        # Pied fort : td contenant exactement rechts / links / beidfussig
+        foot = None
+        for td in tds:
+            t = td.get_text(strip=True).lower()
+            if t in ("rechts", "links", "beidfussig", "beidf\xfcssig"):
+                foot = {"rechts": "Droit", "links": "Gauche"}.get(t, "Ambidextre")
+                break
+
         players.append({
-            "player_tm":      name,
+            "player_tm":        name,
             "market_value_eur": mv,
-            "contract_end":   contract_end,
+            "contract_end":     contract_end,
+            "foot":             foot,
         })
     return players
 
