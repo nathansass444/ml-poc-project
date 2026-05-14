@@ -132,6 +132,86 @@ def _fmt_contract_end(date_str) -> str:
         return str(date_str)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Poids par position pour la similarite KNN
+# ─────────────────────────────────────────────────────────────────────────────
+
+POSITION_WEIGHTS: dict[str, dict[str, float]] = {
+    "FW": {
+        "Per 90 Minutes_Gls": 3.0,
+        "Per 90 Minutes_Ast": 2.5,
+        "Per 90 Minutes_G+A": 2.5,
+        "Standard_Sh/90":     2.0,
+        "Standard_SoT/90":    2.0,
+        "Standard_G/SoT":     2.0,
+        "Standard_SoT%":      1.5,
+        "int_per90":          0.3,
+        "tklw_per90":         0.3,
+        "fls_per90":          0.8,
+        "fld_per90":          2.0,   # fautes subies = proxy dribbles
+        "crs_per90":          1.2,
+        "off_per90":          1.5,
+        "crd_per90":          0.2,
+    },
+    "MF": {
+        "Per 90 Minutes_Gls": 2.0,
+        "Per 90 Minutes_Ast": 3.0,
+        "Per 90 Minutes_G+A": 2.0,
+        "Standard_Sh/90":     1.2,
+        "Standard_SoT/90":    1.2,
+        "Standard_G/SoT":     0.8,
+        "Standard_SoT%":      0.8,
+        "int_per90":          2.5,
+        "tklw_per90":         2.5,
+        "fls_per90":          1.5,
+        "fld_per90":          1.5,
+        "crs_per90":          2.0,
+        "off_per90":          0.4,
+        "crd_per90":          1.0,
+    },
+    "DF": {
+        "Per 90 Minutes_Gls": 0.4,
+        "Per 90 Minutes_Ast": 0.8,
+        "Per 90 Minutes_G+A": 0.4,
+        "Standard_Sh/90":     0.3,
+        "Standard_SoT/90":    0.3,
+        "Standard_G/SoT":     0.2,
+        "Standard_SoT%":      0.2,
+        "int_per90":          3.5,
+        "tklw_per90":         3.5,
+        "fls_per90":          2.0,
+        "fld_per90":          1.0,
+        "crs_per90":          1.5,
+        "off_per90":          0.1,
+        "crd_per90":          1.5,
+    },
+    "GK": {
+        "Per 90 Minutes_Gls": 0.1,
+        "Per 90 Minutes_Ast": 0.3,
+        "Per 90 Minutes_G+A": 0.1,
+        "Standard_Sh/90":     0.1,
+        "Standard_SoT/90":    0.1,
+        "Standard_G/SoT":     0.1,
+        "Standard_SoT%":      0.1,
+        "int_per90":          1.5,
+        "tklw_per90":         1.0,
+        "fls_per90":          2.0,
+        "fld_per90":          0.5,
+        "crs_per90":          0.5,
+        "off_per90":          0.1,
+        "crd_per90":          2.0,
+    },
+}
+
+_DEFAULT_WEIGHTS = {k: 1.0 for k in POSITION_WEIGHTS["MF"]}
+
+
+def get_weight_vector(pos_primary: str, feature_names: list[str]) -> np.ndarray:
+    """Retourne un vecteur de poids aligne sur feature_names."""
+    w_dict = POSITION_WEIGHTS.get(pos_primary, _DEFAULT_WEIGHTS)
+    return np.array([w_dict.get(f, 1.0) for f in feature_names], dtype=float)
+
+
 # Labels lisibles pour les 14 features KNN
 FEATURE_LABELS_FR = {
     "Per 90 Minutes_Gls": "Buts/90",
@@ -157,6 +237,7 @@ def explain_similarity(
     players_df: pd.DataFrame,
     knn_data: dict,
     ref_name: str,
+    pos_primary: str = "MF",
 ) -> None:
     """Affiche dans un expander l explication de la similarite KNN."""
     X_scaled     = knn_data["X_scaled"]
@@ -177,21 +258,27 @@ def explain_similarity(
         st.caption("Donnees de features indisponibles.")
         return
 
+    # Poids de position
+    w_vec = get_weight_vector(pos_primary, feat_names)
+
     # Per-feature : valeurs brutes (non scalees) pour affichage lisible
     ref_raw  = prepare_player_features(players_df[players_df["player"] == ref_name].head(1))
     cand_raw = prepare_player_features(players_df[players_df["player"] == cand_name].head(1))
 
-    labels, ref_vals, cand_vals, diffs = [], [], [], []
-    for feat in feat_names:
+    labels, ref_vals, cand_vals, diffs, weights_list = [], [], [], [], []
+    for feat, w in zip(feat_names, w_vec):
         label = FEATURE_LABELS_FR.get(feat, feat)
         rv = float(ref_raw[feat].iloc[0])  if (not ref_raw.empty  and feat in ref_raw.columns)  else 0.0
         cv = float(cand_raw[feat].iloc[0]) if (not cand_raw.empty and feat in cand_raw.columns) else 0.0
-        labels.append(label)
+        # Difference ponderee (ce qui compte vraiment dans la similarite)
+        col_max = max(abs(rv), abs(cv), 1e-6)
+        labels.append(f"{'★ ' if w >= 2.5 else ''}{label}")
         ref_vals.append(rv)
         cand_vals.append(cv)
-        diffs.append(abs(cv - rv))
+        diffs.append(abs(cv - rv) / col_max * w)   # diff normalisee et ponderee
+        weights_list.append(w)
 
-    # Trier par difference croissante (plus similaire en haut)
+    # Trier par difference ponderee croissante (plus similaire en haut)
     order = sorted(range(len(diffs)), key=lambda i: diffs[i])
     top_sim  = [labels[i] for i in order[:4]]
     top_diff = [labels[i] for i in order[-3:]][::-1]
@@ -319,12 +406,15 @@ def find_replacements(
     scaler       = knn_data["scaler"]
     X_scaled     = knn_data["X_scaled"]
     player_index = knn_data["player_index"]
+    feat_names   = knn_data.get("feature_names", [])
 
-    # Vecteur du joueur a remplacer
-    query_vec = X_scaled[query_player_idx].reshape(1, -1)
+    # Ponderation par position avant similarite cosinus
+    weights   = get_weight_vector(pos_primary_filter, feat_names)
+    X_w       = X_scaled * weights
+    query_vec = X_w[query_player_idx].reshape(1, -1)
 
-    # Similarite cosinus avec tous les joueurs
-    sims = cosine_similarity(query_vec, X_scaled)[0]
+    # Similarite cosinus ponderee
+    sims = cosine_similarity(query_vec, X_w)[0]
 
     results = player_index.copy()
     results["similarity"] = sims
@@ -655,6 +745,7 @@ def build_app() -> None:
                     players_df=players_df,
                     knn_data=knn_data,
                     ref_name=selected_player,
+                    pos_primary=player_pos_pri,
                 )
 
             st.markdown("")   # espace entre les cartes
