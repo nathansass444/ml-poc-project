@@ -206,6 +206,8 @@ def find_replacements(
     tier_filter: str,
     budget_max_eur: float | None = None,
     include_unknown_mv: bool = True,
+    age_min: int = 15,
+    age_max: int = 40,
     n: int = 10,
 ) -> pd.DataFrame:
     scaler       = knn_data["scaler"]
@@ -228,6 +230,11 @@ def find_replacements(
         how="left",
     )
 
+    # Colonne age numerique pour filtrage
+    results["_age_int"] = pd.to_numeric(
+        results["age"].astype(str).str.extract(r"(\d+)")[0], errors="coerce"
+    )
+
     # Filtres
     results = results[results.index != query_player_idx]          # exclure le joueur lui-meme
     results = results[results["role"] == role_filter]             # meme role
@@ -235,6 +242,12 @@ def find_replacements(
         results = results[~results["league"].isin(exclude_leagues)]
     if tier_filter != "Tous":
         results = results[results["tier"] == ("secondary" if tier_filter == "Ligues secondaires" else "top5")]
+
+    # Filtre age
+    if age_min > 15 or age_max < 40:
+        age_known = results["_age_int"].notna()
+        in_range  = results["_age_int"].between(age_min, age_max)
+        results   = results[~age_known | in_range]
 
     # Filtre budgetaire
     if budget_max_eur is not None:
@@ -362,6 +375,15 @@ def build_app() -> None:
         )
         include_unknown_mv = st.checkbox("Inclure joueurs sans valeur connue", value=True)
 
+        st.markdown("**Tranche d age**")
+        age_range = st.slider(
+            "Age (min - max)",
+            min_value=15, max_value=40,
+            value=(15, 40),
+            step=1,
+            format="%d ans",
+        )
+
         n_recommendations  = st.slider("Nombre de candidats", 5, 20, 10)
 
         st.markdown("---")
@@ -419,6 +441,8 @@ def build_app() -> None:
             tier_filter=tier_filter,
             budget_max_eur=budget_max_m * 1_000_000,
             include_unknown_mv=include_unknown_mv,
+            age_min=age_range[0],
+            age_max=age_range[1],
             n=n_recommendations,
         )
 
