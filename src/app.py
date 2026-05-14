@@ -45,6 +45,10 @@ def load_data():
     players = pd.read_csv(p)
     pos_col = next((c for c in ["pos", "pos_", "position"] if c in players.columns), "pos_")
     players["role"] = players[pos_col].apply(get_role_label)
+    # Position primaire FBref (ex: "MF,FW" -> "MF") pour filtre precis
+    players["pos_primary"] = (
+        players[pos_col].astype(str).str.split(",").str[0].str.strip().str.upper()
+    )
     # Normaliser les colonnes avec underscore final
     for col_under, col_clean in [("age_", "age"), ("nation_", "nation"), ("pos_", "pos")]:
         if col_under in players.columns and col_clean not in players.columns:
@@ -201,8 +205,9 @@ def find_replacements(
     query_player_idx: int,
     players_df: pd.DataFrame,
     knn_data: dict,
-    role_filter: str,
+    pos_primary_filter: str,
     exclude_leagues: list[str],
+    exclude_team: str,
     tier_filter: str,
     budget_max_eur: float | None = None,
     include_unknown_mv: bool = True,
@@ -223,7 +228,7 @@ def find_replacements(
     results = player_index.copy()
     results["similarity"] = sims
     results = results.merge(
-        players_df[["player", "team", "league", "role",
+        players_df[["player", "team", "league", "role", "pos_primary",
                     "Playing Time_Min", "age", "nation",
                     "market_value_eur"]].drop_duplicates("player"),
         on=["player", "team", "league"],
@@ -236,8 +241,9 @@ def find_replacements(
     )
 
     # Filtres
-    results = results[results.index != query_player_idx]          # exclure le joueur lui-meme
-    results = results[results["role"] == role_filter]             # meme role
+    results = results[results.index != query_player_idx]                    # exclure le joueur lui-meme
+    results = results[results["team"] != exclude_team]                      # exclure les coeequipiers
+    results = results[results["pos_primary"] == pos_primary_filter]         # meme poste FBref exact
     if exclude_leagues:
         results = results[~results["league"].isin(exclude_leagues)]
     if tier_filter != "Tous":
@@ -412,8 +418,9 @@ def build_app() -> None:
             st.warning(f"Joueur {selected_player} introuvable.")
             st.stop()
 
-        player_role = player_row["role"].iloc[0]
-        player_idx  = player_row.index[0]
+        player_role    = player_row["role"].iloc[0]
+        player_pos_pri = player_row["pos_primary"].iloc[0] if "pos_primary" in player_row.columns else player_role.upper()[:2]
+        player_idx     = player_row.index[0]
 
         # Metriques rapides
         c1, c2, c3, c4 = st.columns(4)
@@ -422,8 +429,8 @@ def build_app() -> None:
                     f'<div class="metric-label">Joueur a remplacer</div></div>', unsafe_allow_html=True)
         c2.markdown(f'<div class="metric-card"><div class="metric-value">{style_name}</div>'
                     f'<div class="metric-label">Style {selected_team}</div></div>', unsafe_allow_html=True)
-        c3.markdown(f'<div class="metric-card"><div class="metric-value">{player_role.capitalize()}</div>'
-                    f'<div class="metric-label">Role detecte</div></div>', unsafe_allow_html=True)
+        c3.markdown(f'<div class="metric-card"><div class="metric-value">{player_pos_pri}</div>'
+                    f'<div class="metric-label">Poste (FBref)</div></div>', unsafe_allow_html=True)
         c4.markdown(f'<div class="metric-card"><div class="metric-value">{mins_played}</div>'
                     f'<div class="metric-label">Minutes 2025-26</div></div>', unsafe_allow_html=True)
 
@@ -436,8 +443,9 @@ def build_app() -> None:
             query_player_idx=player_idx,
             players_df=players_df,
             knn_data=knn_data,
-            role_filter=player_role,
+            pos_primary_filter=player_pos_pri,
             exclude_leagues=exclude_leagues,
+            exclude_team=selected_team,
             tier_filter=tier_filter,
             budget_max_eur=budget_max_m * 1_000_000,
             include_unknown_mv=include_unknown_mv,
