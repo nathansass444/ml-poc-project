@@ -141,7 +141,7 @@ def search_player(name: str, team: str, age: int | None = None) -> dict | None:
                 # Pied fort
                 for span in psoup.select("span.data-header__content"):
                     t = span.get_text(strip=True).lower()
-                    if t in ("rechts", "links", "beidfussig", "beidf\xfcssig"):
+                    if t in ("rechts", "links", "beidfussig", "beidf\xfcssig", "beidf\xfc\xdfig"):
                         foot = {"rechts": "Droit", "links": "Gauche"}.get(t, "Ambidextre")
                         break
             time.sleep(0.8)
