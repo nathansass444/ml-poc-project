@@ -223,7 +223,7 @@ def find_replacements(
     results = player_index.copy()
     results["similarity"] = sims
     results = results.merge(
-        players_df[["player", "team", "league", "role", "tier",
+        players_df[["player", "team", "league", "role",
                     "Playing Time_Min", "age", "nation",
                     "market_value_eur"]].drop_duplicates("player"),
         on=["player", "team", "league"],
