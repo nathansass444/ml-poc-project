@@ -560,49 +560,122 @@ def build_app() -> None:
     # TAB 2 — Style d equipe
     # ═════════════════════════════════════════════════════════════════════════
     with tab2:
-        st.subheader("Analyse du style de jeu")
+        STYLE_COLORS = {
+            "Possession":              "#00d4ff",
+            "Pressing / intensite":    "#ff6b35",
+            "Jeu direct / physique":   "#7bc67e",
+            "Bloc bas / contre-attaque": "#f7b731",
+        }
+        STYLE_DESC = {
+            "Possession":            "Equipe qui conserve le ballon, construit proprement et attend l ouverture. Chercher des joueurs techniques, bons passeurs, confortables sous pression.",
+            "Pressing / intensite":  "Equipe qui presse haut, recupere vite et joue vertical. Chercher des joueurs endurants, bons au duel, capable de jouer vite.",
+            "Jeu direct / physique": "Equipe qui joue long, s appuie sur la puissance physique et les duels aeriens. Chercher des joueurs physiques, bons de la tete, capables de tenir le ballon.",
+            "Bloc bas / contre-attaque": "Equipe qui defend profond et repart en contre. Chercher des joueurs rapides en transition, defenseurs solides, attaquants capables d exploiter l espace.",
+        }
 
-        all_teams      = sorted(teams_df["team"].dropna().unique())
-        compare_teams  = st.multiselect(
-            "Selectionne 2 a 4 equipes",
-            all_teams,
-            default=[selected_team] + [t for t in all_teams if t != selected_team][:2],
-            max_selections=4,
+        # ── Profil de l equipe recruteuse ─────────────────────────────────────
+        team_row2   = teams_df[teams_df["team"] == selected_team]
+        X_team2     = prepare_team_features(team_row2)
+        cluster_id2 = int(kmeans.predict(X_team2.values)[0])
+        style_name2 = label_team_cluster(cluster_id2)
+        style_color = STYLE_COLORS.get(style_name2, "#00d4ff")
+
+        st.markdown(
+            f'<h2 style="margin-bottom:4px">{selected_team}</h2>'
+            f'<span style="background:{style_color}22; color:{style_color}; '
+            f'border:1px solid {style_color}; border-radius:6px; '
+            f'padding:4px 14px; font-size:1rem; font-weight:700;">'
+            f'{style_name2}</span>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<p style="color:#bbb; margin-top:10px; margin-bottom:20px;">'
+            f'{STYLE_DESC.get(style_name2, "")}</p>',
+            unsafe_allow_html=True,
         )
 
-        if len(compare_teams) < 2:
-            st.info("Selectionne au moins 2 equipes.")
-        else:
-            rows        = teams_df[teams_df["team"].isin(compare_teams)]
-            X_compare   = prepare_team_features(rows)
-            cluster_ids = kmeans.predict(X_compare.values)
+        # ── Radar : equipe vs moyenne du cluster ──────────────────────────────
+        TEAM_RADAR_FEATURES = [
+            ("Possession (%)",   "Poss_"),
+            ("Tirs/90",          "Standard_Sh/90"),
+            ("Buts/90",          "Per 90 Minutes_Gls"),
+            ("Pressing",         "fls_per90"),
+            ("Interceptions/90", "int_per90"),
+            ("Tacles/90",        "tklw_per90"),
+            ("Centres/90",       "crs_per90"),
+        ]
 
-            cols = st.columns(len(compare_teams))
-            for i, (team, cid) in enumerate(zip(compare_teams, cluster_ids)):
-                with cols[i]:
-                    st.markdown(
-                        f'<div class="metric-card">'
-                        f'<div class="metric-value" style="font-size:1.1rem">{team}</div>'
-                        f'<div class="metric-label">{label_team_cluster(int(cid))}</div>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
+        all_X2      = prepare_team_features(teams_df)
+        all_labels2 = kmeans.predict(all_X2.values)
+        same_cluster_mask = all_labels2 == cluster_id2
 
-        st.markdown("### Distribution des styles — toutes les equipes")
-        all_X       = prepare_team_features(teams_df)
-        all_labels  = kmeans.predict(all_X.values)
-        counts      = pd.Series(all_labels).value_counts().sort_index()
-        style_names = [label_team_cluster(i) for i in counts.index]
+        radar_labels = [f for _, f in TEAM_RADAR_FEATURES if f in all_X2.columns]
+        radar_names  = [n for n, f in TEAM_RADAR_FEATURES if f in all_X2.columns]
 
-        fig = go.Figure(go.Bar(
-            x=style_names, y=counts.values,
-            marker_color=["#00d4ff", "#ff6b35", "#7bc67e", "#f7b731"],
-        ))
-        fig.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="white"), yaxis_title="Nb equipes", height=350,
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        if radar_labels and not team_row2.empty:
+            team_vals    = all_X2.loc[team_row2.index, radar_labels].iloc[0].values.astype(float)
+            cluster_avg  = all_X2[same_cluster_mask][radar_labels].mean().values.astype(float)
+            global_avg   = all_X2[radar_labels].mean().values.astype(float)
+
+            # Normalisation 0-1 sur global max pour garder l echelle comparable
+            col_max = np.maximum(all_X2[radar_labels].max().values, 1e-6)
+            t_norm  = team_vals   / col_max
+            c_norm  = cluster_avg / col_max
+
+            fig_radar = go.Figure()
+            for vals, name, color, dash in [
+                (t_norm, selected_team,          style_color, "solid"),
+                (c_norm, f"Moy. {style_name2}",  "#888888",   "dot"),
+            ]:
+                v = vals.tolist() + [vals[0]]
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=v, theta=radar_names + [radar_names[0]],
+                    fill="toself" if dash == "solid" else "none",
+                    name=name, line=dict(color=color, dash=dash, width=2),
+                    opacity=0.85,
+                ))
+            fig_radar.update_layout(
+                polar=dict(radialaxis=dict(visible=True, showticklabels=False, range=[0, 1])),
+                showlegend=True,
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="white"), height=400, margin=dict(t=20, b=20),
+            )
+            st.plotly_chart(fig_radar, use_container_width=True)
+
+        # ── Equipes au style le plus similaire ────────────────────────────────
+        st.markdown("### Equipes au style le plus similaire")
+        st.caption("Ces equipes jouent comme vous — leurs joueurs s adapteront plus facilement.")
+
+        from sklearn.metrics.pairwise import cosine_similarity as _cos_sim
+        team_vec   = all_X2.loc[team_row2.index].values
+        all_vecs   = all_X2.values
+        sims_teams = _cos_sim(team_vec, all_vecs)[0]
+
+        sim_df = pd.DataFrame({
+            "team":       teams_df["team"].values,
+            "league":     teams_df["league"].values,
+            "similarity": sims_teams,
+            "cluster":    all_labels2,
+        })
+        sim_df = sim_df[sim_df["team"] != selected_team]
+        sim_df = sim_df.nlargest(9, "similarity")
+
+        cols3 = st.columns(3)
+        for i, (_, r) in enumerate(sim_df.iterrows()):
+            sname = label_team_cluster(int(r["cluster"]))
+            sclr  = STYLE_COLORS.get(sname, "#888")
+            sim_p = int(r["similarity"] * 100)
+            with cols3[i % 3]:
+                st.markdown(
+                    f'<div class="metric-card" style="margin-bottom:10px;">'
+                    f'<div class="metric-value" style="font-size:1rem; color:#fff">{r["team"]}</div>'
+                    f'<div class="metric-label">{r["league"]}</div>'
+                    f'<div style="margin-top:6px;">'
+                    f'<span style="color:{sclr}; font-size:0.8rem; font-weight:600">{sname}</span>'
+                    f'<span style="color:#888; font-size:0.8rem;"> &nbsp;·&nbsp; {sim_p}% similaire</span>'
+                    f'</div></div>',
+                    unsafe_allow_html=True,
+                )
 
     # ═════════════════════════════════════════════════════════════════════════
     # TAB 3 — A propos
