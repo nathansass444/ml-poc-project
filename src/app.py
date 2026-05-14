@@ -403,6 +403,7 @@ def find_replacements(
     include_unknown_mv: bool = True,
     age_min: int = 15,
     age_max: int = 40,
+    foot_filter: str = "Tous",
     n: int = 10,
 ) -> pd.DataFrame:
     scaler       = knn_data["scaler"]
@@ -420,10 +421,12 @@ def find_replacements(
 
     results = player_index.copy()
     results["similarity"] = sims
+    extra_cols = ["player", "team", "league", "role", "pos_primary",
+                  "Playing Time_Min", "age", "nation", "market_value_eur"]
+    if "foot" in players_df.columns:
+        extra_cols.append("foot")
     results = results.merge(
-        players_df[["player", "team", "league", "role", "pos_primary",
-                    "Playing Time_Min", "age", "nation",
-                    "market_value_eur"]].drop_duplicates("player"),
+        players_df[extra_cols].drop_duplicates("player"),
         on=["player", "team", "league"],
         how="left",
     )
@@ -447,6 +450,13 @@ def find_replacements(
         age_known = results["_age_int"].notna()
         in_range  = results["_age_int"].between(age_min, age_max)
         results   = results[~age_known | in_range]
+
+    # Filtre pied fort
+    if foot_filter != "Tous" and "market_value_eur" in results.columns:
+        if "foot" in results.columns:
+            has_foot = results["foot"].notna() & (results["foot"] != "nan")
+            right_foot = results["foot"] == foot_filter
+            results = results[~has_foot | right_foot]
 
     # Filtre budgetaire
     if budget_max_eur is not None:
@@ -583,6 +593,13 @@ def build_app() -> None:
             format="%d ans",
         )
 
+        foot_filter = st.radio(
+            "Pied fort",
+            ["Tous", "Droit", "Gauche", "Ambidextre"],
+            horizontal=True,
+            index=0,
+        )
+
         n_recommendations  = st.slider("Nombre de candidats", 5, 20, 10)
 
         st.markdown("---")
@@ -644,6 +661,7 @@ def build_app() -> None:
             include_unknown_mv=include_unknown_mv,
             age_min=age_range[0],
             age_max=age_range[1],
+            foot_filter=foot_filter,
             n=n_recommendations,
         )
 
