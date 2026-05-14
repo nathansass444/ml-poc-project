@@ -647,16 +647,18 @@ def build_app() -> None:
         st.caption("Ces equipes jouent comme vous — leurs joueurs s adapteront plus facilement.")
 
         from sklearn.metrics.pairwise import cosine_similarity as _cos_sim
-        team_vec   = all_X2.loc[team_row2.index].values
-        all_vecs   = all_X2.values
-        sims_teams = _cos_sim(team_vec, all_vecs)[0]
+        scaler_team = kmeans.named_steps["scaler"]
+        all_X2_scaled = scaler_team.transform(all_X2)
+        team_idx_in_all = list(teams_df["team"].values).index(selected_team) if selected_team in teams_df["team"].values else 0
+        team_vec   = all_X2_scaled[[team_idx_in_all]]
+        sims_teams = _cos_sim(team_vec, all_X2_scaled)[0]
 
         sim_df = pd.DataFrame({
             "team":       teams_df["team"].values,
             "league":     teams_df["league"].values,
             "similarity": sims_teams,
             "cluster":    all_labels2,
-        })
+        }).reset_index(drop=True)
         sim_df = sim_df[sim_df["team"] != selected_team]
         sim_df = sim_df.nlargest(9, "similarity")
 
