@@ -132,6 +132,107 @@ def _fmt_contract_end(date_str) -> str:
         return str(date_str)
 
 
+# Labels lisibles pour les 14 features KNN
+FEATURE_LABELS_FR = {
+    "Per 90 Minutes_Gls": "Buts/90",
+    "Per 90 Minutes_Ast": "Passes D/90",
+    "Per 90 Minutes_G+A": "G+A/90",
+    "Standard_Sh/90":     "Tirs/90",
+    "Standard_SoT/90":    "Tirs cadres/90",
+    "Standard_G/SoT":     "Conversion",
+    "Standard_SoT%":      "Precision tirs",
+    "int_per90":          "Interceptions/90",
+    "tklw_per90":         "Tacles/90",
+    "fls_per90":          "Fautes/90",
+    "fld_per90":          "Fautes subies/90",
+    "crs_per90":          "Centres/90",
+    "off_per90":          "Hors-jeu/90",
+    "crd_per90":          "Cartons/90",
+}
+
+
+def explain_similarity(
+    ref_idx: int,
+    cand_name: str,
+    players_df: pd.DataFrame,
+    knn_data: dict,
+    ref_name: str,
+) -> None:
+    """Affiche dans un expander l explication de la similarite KNN."""
+    X_scaled     = knn_data["X_scaled"]
+    feat_names   = knn_data.get("feature_names", [])
+    player_index = knn_data["player_index"]
+
+    # Index du candidat dans player_index
+    cand_mask = player_index["player"] == cand_name
+    if not cand_mask.any():
+        st.caption("Donnees de similarite indisponibles.")
+        return
+    cand_idx = int(player_index[cand_mask].index[0])
+
+    ref_vec  = X_scaled[ref_idx]
+    cand_vec = X_scaled[cand_idx]
+
+    if len(feat_names) == 0 or len(ref_vec) != len(feat_names):
+        st.caption("Donnees de features indisponibles.")
+        return
+
+    # Per-feature : valeurs brutes (non scalees) pour affichage lisible
+    ref_raw  = prepare_player_features(players_df[players_df["player"] == ref_name].head(1))
+    cand_raw = prepare_player_features(players_df[players_df["player"] == cand_name].head(1))
+
+    labels, ref_vals, cand_vals, diffs = [], [], [], []
+    for feat in feat_names:
+        label = FEATURE_LABELS_FR.get(feat, feat)
+        rv = float(ref_raw[feat].iloc[0])  if (not ref_raw.empty  and feat in ref_raw.columns)  else 0.0
+        cv = float(cand_raw[feat].iloc[0]) if (not cand_raw.empty and feat in cand_raw.columns) else 0.0
+        labels.append(label)
+        ref_vals.append(rv)
+        cand_vals.append(cv)
+        diffs.append(abs(cv - rv))
+
+    # Trier par difference croissante (plus similaire en haut)
+    order = sorted(range(len(diffs)), key=lambda i: diffs[i])
+    top_sim  = [labels[i] for i in order[:4]]
+    top_diff = [labels[i] for i in order[-3:]][::-1]
+
+    # Texte explicatif
+    sim_str  = ", ".join(top_sim)
+    diff_str = ", ".join(top_diff)
+    st.markdown(
+        f"**Points communs :** {sim_str}  \n"
+        f"**Principales differences :** {diff_str}"
+    )
+
+    # Graphique comparatif (barres horizontales)
+    sorted_labels = [labels[i] for i in order]
+    sorted_ref    = [ref_vals[i] for i in order]
+    sorted_cand   = [cand_vals[i] for i in order]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=sorted_labels, x=sorted_ref,
+        name=ref_name, orientation="h",
+        marker_color="#888888", opacity=0.7,
+    ))
+    fig.add_trace(go.Bar(
+        y=sorted_labels, x=sorted_cand,
+        name=cand_name, orientation="h",
+        marker_color="#00d4ff", opacity=0.85,
+    ))
+    fig.update_layout(
+        barmode="group",
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white", size=11),
+        height=max(300, len(feat_names) * 28),
+        margin=dict(l=10, r=10, t=10, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.01),
+        xaxis=dict(showgrid=True, gridcolor="#333"),
+        yaxis=dict(autorange="reversed"),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Radar chart
 # ─────────────────────────────────────────────────────────────────────────────
@@ -547,6 +648,15 @@ def build_app() -> None:
                         delta=f"{delta:+.2f} vs ref",
                         delta_color="normal",
                     )
+            with st.expander(f"Pourquoi {sim_pct}% de similarite avec {row['player']} ?"):
+                explain_similarity(
+                    ref_idx=player_idx,
+                    cand_name=row["player"],
+                    players_df=players_df,
+                    knn_data=knn_data,
+                    ref_name=selected_player,
+                )
+
             st.markdown("")   # espace entre les cartes
 
         # Radar chart top 3
